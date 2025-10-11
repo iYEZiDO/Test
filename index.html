@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Soldaten gegen Zombiehorden</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header>
+        <h1>Soldaten gegen Zombiehorden</h1>
+        <p class="subtitle">
+          Ziehe den Soldaten nach links oder rechts, um die besten Zahlenfelder zu treffen
+          und mehr Kameraden für deinen Trupp zu gewinnen.
+        </p>
+      </header>
+
+      <section class="hud" aria-label="Spielübersicht">
+        <div class="stat">Kameraden: <span id="comrades">0</span></div>
+        <div class="stat">Rang: <span id="rank">Rekrut</span></div>
+        <div class="stat">Waffe: <span id="weapon">Pistole</span></div>
+        <div class="stat">Zombieabschüsse: <span id="kills">0</span></div>
+        <div class="stat">Basisintegrität: <span id="base-health">100%</span></div>
+      </section>
+
+      <p id="status" role="status" class="status"></p>
+
+      <canvas id="game" width="900" height="540" aria-label="Spielfläche"></canvas>
+
+      <div class="controls">
+        <button id="fireButton" type="button">Feuer!</button>
+        <span class="hint">Tipp: Du kannst auch die Leertaste zum Schießen verwenden.</span>
+      </div>
+
+      <section class="info">
+        <h2>So wird gespielt</h2>
+        <ul>
+          <li>Ziehe den Soldaten auf dem Spielfeld horizontal, um eine Schusslinie festzulegen.</li>
+          <li>
+            Triff Felder mit positiven Werten (bis zu +80), um neue Kameraden für deinen Trupp zu rekrutieren.
+          </li>
+          <li>
+            Negative Felder (zwischen -20 und -5) kosten dich Kameraden – wähle dein Ziel sorgfältig!
+          </li>
+          <li>
+            Je mehr Kameraden du hast, desto bessere Waffen schaltest du frei und steigst im Rang auf.
+          </li>
+          <li>
+            Zombiehorden marschieren kontinuierlich auf dich zu. Wenn sie die Basis erreichen, sinkt die Basisintegrität.
+          </li>
+          <li>
+            Verliere nicht alle Kameraden und halte deine Basis über 0&nbsp;%, um den Kampf fortzusetzen.
+          </li>
+        </ul>
+      </section>
+
+      <section class="log" aria-live="polite" aria-label="Ereignisprotokoll">
+        <h2>Ereignisse</h2>
+        <ul id="log"></ul>
+      </section>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
