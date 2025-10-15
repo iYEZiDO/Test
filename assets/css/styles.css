@@ -203,6 +203,43 @@ h1, h2, h3 {
     gap: 0.75rem;
 }
 
+.imprint {
+    display: grid;
+    gap: 2rem;
+}
+
+.imprint__list {
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1.5rem;
+}
+
+.imprint__item {
+    background-color: var(--white);
+    padding: 1.5rem;
+    border-radius: 1rem;
+    box-shadow: 0 12px 30px rgba(9, 30, 66, 0.08);
+    border: 1px solid rgba(15, 42, 58, 0.05);
+}
+
+.imprint__item dt {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--bg);
+}
+
+.imprint__item dd {
+    margin: 0;
+    color: var(--muted);
+}
+
+.imprint__note {
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin: 0;
+}
+
 .fact-list span,
 .contact-list span {
     display: inline-block;
