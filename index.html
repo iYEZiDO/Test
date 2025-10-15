@@ -103,6 +103,53 @@
             </div>
         </section>
 
+        <section id="availability" class="section section--light">
+            <div class="container availability">
+                <div>
+                    <h2>Verfügbarkeit im Überblick</h2>
+                    <p>
+                        Planen Sie Ihre Transporte mit Blick auf meine aktuellen Buchungen. Freie Tage sind hell markiert,
+                        bereits reservierte Termine erkennen Sie auf einen Blick.
+                    </p>
+                    <div class="calendar__legend" aria-hidden="true">
+                        <span class="calendar__legend-item">
+                            <span class="calendar__legend-swatch" aria-hidden="true"></span>
+                            <span>Verfügbar</span>
+                        </span>
+                        <span class="calendar__legend-item">
+                            <span class="calendar__legend-swatch calendar__legend-swatch--booked" aria-hidden="true"></span>
+                            <span>Bereits gebucht</span>
+                        </span>
+                        <span class="calendar__legend-item">
+                            <span class="calendar__legend-swatch calendar__legend-swatch--today" aria-hidden="true"></span>
+                            <span>Heute</span>
+                        </span>
+                    </div>
+                    <p class="availability__note">
+                        Hinweis für Kheder Transporte: Aktualisieren Sie die Liste der gebuchten Tage im JavaScript-Code unten
+                        (Format: JJJJ-MM-TT), damit Ihre Kunden jederzeit aktuelle Informationen sehen.
+                    </p>
+                </div>
+                <div class="calendar" data-calendar>
+                    <div class="calendar__header">
+                        <button type="button" class="calendar__nav" data-calendar-prev aria-label="Vorheriger Monat">&larr;</button>
+                        <h3 data-calendar-label>Kalender</h3>
+                        <button type="button" class="calendar__nav" data-calendar-next aria-label="Nächster Monat">&rarr;</button>
+                    </div>
+                    <div class="calendar__weekday-grid" aria-hidden="true">
+                        <span>Mo</span>
+                        <span>Di</span>
+                        <span>Mi</span>
+                        <span>Do</span>
+                        <span>Fr</span>
+                        <span>Sa</span>
+                        <span>So</span>
+                    </div>
+                    <div class="calendar__grid" data-calendar-grid role="grid" aria-live="polite"></div>
+                </div>
+            </div>
+        </section>
+
         <section id="contact" class="section">
             <div class="container contact">
                 <div>
@@ -153,7 +200,123 @@
     </footer>
 
     <script>
-        document.getElementById('year').textContent = new Date().getFullYear();
+        (function () {
+            const yearElement = document.getElementById('year');
+            if (yearElement) {
+                yearElement.textContent = new Date().getFullYear();
+            }
+        })();
+
+        (function () {
+            const calendarElement = document.querySelector('[data-calendar]');
+            if (!calendarElement) {
+                return;
+            }
+
+            const monthLabel = calendarElement.querySelector('[data-calendar-label]');
+            const grid = calendarElement.querySelector('[data-calendar-grid]');
+            const prevButton = calendarElement.querySelector('[data-calendar-prev]');
+            const nextButton = calendarElement.querySelector('[data-calendar-next]');
+
+            const bookedDates = [
+                // Tragen Sie hier Ihre ausgebuchten Tage im Format "JJJJ-MM-TT" ein, z. B. "2024-06-12".
+            ];
+
+            const toDateKey = (year, month, day) => {
+                return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            };
+
+            const today = new Date();
+            const todayKey = toDateKey(today.getFullYear(), today.getMonth(), today.getDate());
+
+            const bookedSet = new Set(
+                bookedDates
+                    .map((date) => date && date.trim())
+                    .filter(Boolean)
+            );
+
+            const state = {
+                current: new Date(today.getFullYear(), today.getMonth(), 1)
+            };
+
+            const monthFormatter = new Intl.DateTimeFormat('de-DE', {
+                month: 'long',
+                year: 'numeric'
+            });
+
+            const dayFormatter = new Intl.DateTimeFormat('de-DE', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+            });
+
+            const getStartOffset = (date) => {
+                const weekday = date.getDay();
+                return (weekday + 6) % 7; // Montag als Wochenbeginn
+            };
+
+            const isPastDate = (year, month, day) => {
+                const comparedDate = new Date(year, month, day);
+                const todayReference = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                return comparedDate < todayReference;
+            };
+
+            const render = () => {
+                const year = state.current.getFullYear();
+                const month = state.current.getMonth();
+
+                monthLabel.textContent = monthFormatter.format(state.current);
+                grid.innerHTML = '';
+                grid.setAttribute('aria-label', `Kalender für ${monthFormatter.format(state.current)}`);
+
+                const firstDayOfMonth = new Date(year, month, 1);
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                const startOffset = getStartOffset(firstDayOfMonth);
+
+                for (let index = 0; index < startOffset; index += 1) {
+                    const emptyCell = document.createElement('div');
+                    emptyCell.className = 'calendar__day';
+                    emptyCell.setAttribute('aria-hidden', 'true');
+                    grid.appendChild(emptyCell);
+                }
+
+                for (let day = 1; day <= daysInMonth; day += 1) {
+                    const dateKey = toDateKey(year, month, day);
+                    const calendarDay = document.createElement('div');
+                    calendarDay.className = 'calendar__day';
+                    calendarDay.textContent = String(day);
+                    calendarDay.setAttribute('role', 'gridcell');
+
+                    const readableLabel = dayFormatter.format(new Date(year, month, day));
+                    calendarDay.setAttribute('aria-label', readableLabel);
+
+                    if (dateKey === todayKey) {
+                        calendarDay.classList.add('calendar__day--today');
+                    }
+
+                    if (bookedSet.has(dateKey)) {
+                        calendarDay.classList.add('calendar__day--booked');
+                        calendarDay.setAttribute('aria-label', `${readableLabel} – bereits gebucht`);
+                    } else if (isPastDate(year, month, day)) {
+                        calendarDay.classList.add('calendar__day--past');
+                    }
+
+                    grid.appendChild(calendarDay);
+                }
+            };
+
+            prevButton.addEventListener('click', () => {
+                state.current.setMonth(state.current.getMonth() - 1);
+                render();
+            });
+
+            nextButton.addEventListener('click', () => {
+                state.current.setMonth(state.current.getMonth() + 1);
+                render();
+            });
+
+            render();
+        })();
     </script>
 </body>
 </html>
