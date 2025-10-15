@@ -525,18 +525,8 @@ body.legal-page {
 }
 
 .legal-back {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    color: rgba(255, 255, 255, 0.85);
-    text-decoration: none;
-    font-weight: 600;
     margin-bottom: 1.5rem;
-}
-
-.legal-back:hover,
-.legal-back:focus {
-    color: var(--white);
+    gap: 0.5rem;
 }
 
 .legal-main {
