@@ -407,11 +407,15 @@ p {
         display: flex;
         border: none;
         background: transparent;
+        width: auto;
+        margin-left: auto;
+        align-items: center;
     }
 
     .nav ul {
         display: flex;
         gap: 1.5rem;
+        justify-content: flex-end;
     }
 
     .nav li {
