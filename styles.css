@@ -66,6 +66,12 @@ p {
     border-bottom: 1px solid rgba(43, 56, 53, 0.08);
 }
 
+.site-header .container {
+    width: 100%;
+    margin: 0;
+    padding: 0 1.25rem;
+}
+
 .header__inner {
     display: flex;
     align-items: center;
