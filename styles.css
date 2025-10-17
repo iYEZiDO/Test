@@ -122,7 +122,7 @@ p {
 }
 
 .nav li {
-    border-top: 1px solid rgba(43, 56, 53, 0.08);
+    border-top: 100px solid rgba(43, 56, 53, 0.08);
 }
 
 .nav a {
