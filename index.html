@@ -19,6 +19,7 @@
       <div class="progress-item">Züge: <span id="moveLabel"></span></div>
     </div>
     <div class="actions">
+      <button id="btnStart">Spiel Starten</button>
       <button id="btnHint">Hint</button>
       <button id="btnReset">Reset</button>
       <button id="btnNext">Nächstes Level</button>
@@ -85,6 +86,7 @@
     const coinLabel = document.getElementById('coinLabel');
     const starLabel = document.getElementById('starLabel');
     const moveLabel = document.getElementById('moveLabel');
+    const btnStart = document.getElementById('btnStart');
     const btnHint = document.getElementById('btnHint');
     const btnReset = document.getElementById('btnReset');
     const btnNext = document.getElementById('btnNext');
@@ -135,7 +137,13 @@
 
     const addWall = (grid, x, y, orientation, pin) => {
       const block = { solid: true, pin: pin || null };
-      if (orientation === 'h') grid.hBlocks[x][y] = block; else grid.vBlocks[x][y] = block;
+      if (orientation === 'h') {
+        if (x < 0 || x >= grid.width || y < 0 || y >= grid.height - 1) return;
+        grid.hBlocks[x][y] = block;
+      } else {
+        if (x < 0 || x >= grid.width - 1 || y < 0 || y >= grid.height) return;
+        grid.vBlocks[x][y] = block;
+      }
     };
 
     const addBoundaryWalls = grid => {
@@ -606,6 +614,10 @@
     });
 
     btnReset.addEventListener('click', resetLevel);
+    btnStart.addEventListener('click', () => {
+      resetLevel();
+      statusText.textContent = 'Level gestartet – ziehe die Pins!';
+    });
     btnHint.addEventListener('click', applyHint);
     btnNext.addEventListener('click', () => {
       if (state.levelIndex < LEVEL_COUNT) {
