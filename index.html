@@ -1,6 +1,620 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pull the Pin - 1000 Level</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
+<body>
+  <header class="topbar">
+    <div class="branding">
+      <h1>Pull the Pin</h1>
+      <p>1000 echte Puzzle-Level</p>
+    </div>
+    <div class="progress">
+      <div class="progress-item">Level: <span id="levelLabel"></span>/1000</div>
+      <div class="progress-item">Coins: <span id="coinLabel"></span></div>
+      <div class="progress-item">Sterne: <span id="starLabel"></span></div>
+      <div class="progress-item">Züge: <span id="moveLabel"></span></div>
+    </div>
+    <div class="actions">
+      <button id="btnHint">Hint</button>
+      <button id="btnReset">Reset</button>
+      <button id="btnNext">Nächstes Level</button>
+    </div>
+  </header>
 
+  <main class="layout">
+    <section class="sidebar">
+      <h2>Regeln</h2>
+      <ul>
+        <li>Ziehe Pins in der richtigen Reihenfolge.</li>
+        <li>Bring den Helden sicher zur Schatztruhe.</li>
+        <li>Wasser löscht Lava, Gas entzündet sich bei Feuer.</li>
+        <li>Begrenzte Züge ab Level 300.</li>
+        <li>Mehrstufige Mehrraum-Puzzles ab Level 600.</li>
+        <li>Meister-Level ab 900: perfekter Ablauf nötig.</li>
+      </ul>
+      <div class="hint-box" id="hintBox"></div>
+    </section>
+    <section class="game-area">
+      <canvas id="gameCanvas" width="900" height="640" aria-label="Spielfeld"></canvas>
+      <div class="status" id="statusText"></div>
+    </section>
+  </main>
+
+  <script>
+    // Basic constants and DOM refs
+    const LEVEL_COUNT = 1000;
+    const CYCLE = 50;
+    const CELL = 32;
+    const MATERIALS = {
+      EMPTY: 'empty',
+      WALL: 'wall',
+      HERO: 'hero',
+      TREASURE: 'treasure',
+      WATER: 'water',
+      LAVA: 'lava',
+      GAS: 'gas',
+      SAND: 'sand',
+      STONE: 'stone',
+      FIRE: 'fire',
+      ENEMY: 'enemy'
+    };
+
+    const COLORS = {
+      empty: '#0f172a',
+      wall: '#1e293b',
+      hero: '#38bdf8',
+      treasure: '#fbbf24',
+      water: '#0ea5e9',
+      lava: '#fb7185',
+      gas: '#a855f7',
+      sand: '#f59e0b',
+      stone: '#6b7280',
+      fire: '#ef4444',
+      enemy: '#22c55e'
+    };
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('statusText');
+    const hintBox = document.getElementById('hintBox');
+    const levelLabel = document.getElementById('levelLabel');
+    const coinLabel = document.getElementById('coinLabel');
+    const starLabel = document.getElementById('starLabel');
+    const moveLabel = document.getElementById('moveLabel');
+    const btnHint = document.getElementById('btnHint');
+    const btnReset = document.getElementById('btnReset');
+    const btnNext = document.getElementById('btnNext');
+
+    // Game state
+    const state = {
+      levelIndex: 1,
+      coins: 0,
+      stars: 0,
+      moveLimit: Infinity,
+      movesUsed: 0,
+      pulledPins: [],
+      grid: null,
+      pins: [],
+      hero: null,
+      treasure: null,
+      enemies: [],
+      won: false,
+      lost: false,
+      hintCost: 15,
+      hintText: ''
+    };
+
+    // Utility helpers
+    const rng = seed => {
+      let t = seed + 0x6D2B79F5;
+      return () => {
+        t += 0x6D2B79F5;
+        let r = t ^ (t >>> 15);
+        r = Math.imul(r, r | 1);
+        r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+
+    const idx = (grid, x, y) => y * grid.width + x;
+    const getCell = (grid, x, y) => grid.cells[idx(grid, x, y)];
+    const setCell = (grid, x, y, material, extra) => {
+      grid.cells[idx(grid, x, y)] = Object.assign({ material, fireTicks: 0 }, extra || {});
+    };
+
+    const createGrid = (width, height) => {
+      const cells = Array.from({ length: width * height }, () => ({ material: MATERIALS.EMPTY, fireTicks: 0 }));
+      const hBlocks = Array.from({ length: width }, () => Array.from({ length: height - 1 }, () => ({ solid: false, pin: null })));
+      const vBlocks = Array.from({ length: width - 1 }, () => Array.from({ length: height }, () => ({ solid: false, pin: null })));
+      return { width, height, cells, hBlocks, vBlocks };
+    };
+
+    const addWall = (grid, x, y, orientation, pin) => {
+      const block = { solid: true, pin: pin || null };
+      if (orientation === 'h') grid.hBlocks[x][y] = block; else grid.vBlocks[x][y] = block;
+    };
+
+    const addBoundaryWalls = grid => {
+      for (let x = 0; x < grid.width; x++) {
+        addWall(grid, x, 0, 'h');
+        addWall(grid, x, grid.height - 1, 'h');
+      }
+      for (let y = 0; y < grid.height; y++) {
+        addWall(grid, 0, y, 'v');
+        addWall(grid, grid.width - 1, y, 'v');
+      }
+    };
+
+    const isBlocked = (grid, x1, y1, x2, y2) => {
+      if (x2 < 0 || x2 >= grid.width || y2 < 0 || y2 >= grid.height) return true;
+      if (x1 === x2 && y1 === y2) return false;
+      if (x1 === x2) return grid.hBlocks[x1][Math.min(y1, y2)].solid;
+      if (y1 === y2) return grid.vBlocks[Math.min(x1, x2)][y1].solid;
+      return true;
+    };
+
+    const createPin = (id, orientation, x, y, label) => ({ id, orientation, x, y, label, pulled: false });
+    const attachPin = (grid, pin) => addWall(grid, pin.x, pin.y, pin.orientation, pin.id);
+
+    const pullPin = pinId => {
+      const pin = state.pins.find(p => p.id === pinId);
+      if (!pin || pin.pulled || state.won || state.lost) return;
+      if (state.movesUsed >= state.moveLimit) return;
+      pin.pulled = true;
+      state.movesUsed += 1;
+      state.pulledPins.push(pinId);
+      if (pin.orientation === 'h') state.grid.hBlocks[pin.x][pin.y] = { solid: false, pin: null };
+      else state.grid.vBlocks[pin.x][pin.y] = { solid: false, pin: null };
+      updateMoveLabel();
+    };
+
+    // Level generation
+    const generateLevel = levelIndex => {
+      const random = rng(levelIndex * 1337);
+      const width = 18;
+      const height = 16;
+      const grid = createGrid(width, height);
+      addBoundaryWalls(grid);
+
+      const cycle = Math.floor((levelIndex - 1) / CYCLE) + 1;
+      const difficulty = cycle + Math.floor(levelIndex / 100);
+      const chamberCount = Math.min(6, 3 + Math.floor(difficulty / 3));
+      const columnSplit = levelIndex >= 600 ? 2 : 1;
+      const chamberHeight = Math.floor((height - 2) / chamberCount);
+      const pins = [];
+      const hintOrder = [];
+
+      if (columnSplit === 2) {
+        const mid = Math.floor(width / 2);
+        for (let y = 1; y < height - 1; y++) addWall(grid, mid, y, 'v');
+      }
+
+      for (let c = 0; c < chamberCount; c++) {
+        const yStart = 1 + c * chamberHeight;
+        const yEnd = c === chamberCount - 1 ? height - 2 : yStart + chamberHeight - 1;
+        if (c < chamberCount - 1) {
+          const pinId = `pin-${c}`;
+          const px = Math.floor(width / 2) - (columnSplit === 2 ? 3 : 0);
+          const py = yEnd;
+          const pin = createPin(pinId, 'h', px, py, String.fromCharCode(65 + c));
+          pins.push(pin);
+          hintOrder.push(pinId);
+          attachPin(grid, pin);
+          for (let x = 1; x < width - 1; x++) if (x !== px) addWall(grid, x, py, 'h');
+        }
+      }
+
+      if (columnSplit === 2) {
+        const connectors = Math.max(2, Math.floor(difficulty / 2));
+        for (let i = 0; i < connectors; i++) {
+          const y = 2 + (i * 3) % (height - 4);
+          const pinId = `cross-${i}`;
+          const pin = createPin(pinId, 'v', Math.floor(width / 2), y, `X${i + 1}`);
+          pins.push(pin);
+          hintOrder.splice(i + 1, 0, pinId);
+          attachPin(grid, pin);
+        }
+      }
+
+      const hero = { x: Math.floor(width / 2), y: 2 };
+      const treasure = { x: Math.floor(width / 2), y: height - 3 };
+      setCell(grid, hero.x, hero.y, MATERIALS.HERO);
+      setCell(grid, treasure.x, treasure.y, MATERIALS.TREASURE);
+
+      const materials = [MATERIALS.WATER, MATERIALS.LAVA, MATERIALS.GAS, MATERIALS.SAND];
+      for (let c = 1; c < chamberCount - 1; c++) {
+        const yStart = 1 + c * chamberHeight;
+        const yEnd = c === chamberCount - 1 ? height - 2 : yStart + chamberHeight - 1;
+        const fillMaterial = materials[Math.floor(random() * materials.length)];
+        const count = 4 + Math.floor(random() * 6) + c;
+        for (let n = 0; n < count; n++) {
+          const x = 2 + Math.floor(random() * (width - 4));
+          const y = yStart + 1 + Math.floor(random() * Math.max(1, yEnd - yStart - 1));
+          if (getCell(grid, x, y).material === MATERIALS.EMPTY) setCell(grid, x, y, fillMaterial);
+        }
+      }
+
+      const enemies = [];
+      const enemyCount = Math.min(6, Math.floor(difficulty / 2));
+      for (let i = 0; i < enemyCount; i++) {
+        const x = 2 + Math.floor(random() * (width - 4));
+        const y = 2 + Math.floor(random() * (height - 4));
+        if (getCell(grid, x, y).material === MATERIALS.EMPTY) {
+          const dir = random() > 0.5 ? 1 : -1;
+          setCell(grid, x, y, MATERIALS.ENEMY, { dir });
+          enemies.push({ x, y, dir });
+        }
+      }
+
+      const moveLimit = levelIndex >= 300 ? Math.max(3, 8 - Math.floor((levelIndex - 300) / 100)) : Infinity;
+      const hintPins = hintOrder.slice(0, Math.min(5, hintOrder.length)).map(id => {
+        const pin = pins.find(p => p.id === id);
+        return pin ? pin.label : '';
+      });
+
+      return {
+        grid,
+        pins,
+        hero,
+        treasure,
+        enemies,
+        moveLimit,
+        hintText: `Empfohlene Pins: ${hintPins.join(' → ') || 'frei wählbar'}`
+      };
+    };
+
+    // UI helpers
+    const updateMoveLabel = () => {
+      moveLabel.textContent = state.moveLimit === Infinity ? '∞' : `${state.movesUsed}/${state.moveLimit}`;
+    };
+
+    const updateLabels = () => {
+      levelLabel.textContent = state.levelIndex;
+      coinLabel.textContent = state.coins;
+      starLabel.textContent = state.stars;
+      updateMoveLabel();
+      hintBox.textContent = state.hintText;
+    };
+
+    const saveProgress = () => {
+      localStorage.setItem('pullpin-progress', JSON.stringify({
+        levelIndex: state.levelIndex,
+        coins: state.coins,
+        stars: state.stars
+      }));
+    };
+
+    const loadProgress = () => {
+      try {
+        const data = JSON.parse(localStorage.getItem('pullpin-progress') || '{}');
+        state.levelIndex = Math.min(LEVEL_COUNT, data.levelIndex || 1);
+        state.coins = data.coins || 0;
+        state.stars = data.stars || 0;
+      } catch (err) {
+        console.warn('Kein Speicherstand geladen', err);
+      }
+    };
+
+    // Rendering
+    const drawGrid = () => {
+      if (!state.grid) return;
+      const grid = state.grid;
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = 'rgba(148,163,184,0.1)';
+      for (let x = 0; x < grid.width; x++) {
+        for (let y = 0; y < grid.height; y++) ctx.strokeRect(x * CELL, y * CELL, CELL, CELL);
+      }
+      for (let y = 0; y < grid.height; y++) {
+        for (let x = 0; x < grid.width; x++) {
+          const cell = getCell(grid, x, y);
+          ctx.fillStyle = COLORS[cell.material];
+          ctx.fillRect(x * CELL, y * CELL, CELL - 1, CELL - 1);
+          if (cell.material === MATERIALS.HERO) {
+            ctx.fillStyle = '#0ea5e9';
+            ctx.fillRect(x * CELL + 6, y * CELL + 6, CELL - 12, CELL - 12);
+          } else if (cell.material === MATERIALS.TREASURE) {
+            ctx.fillStyle = '#f59e0b';
+            ctx.fillRect(x * CELL + 4, y * CELL + 4, CELL - 8, CELL - 8);
+          } else if (cell.material === MATERIALS.ENEMY) {
+            ctx.fillStyle = '#22c55e';
+            ctx.fillRect(x * CELL + 6, y * CELL + 6, CELL - 12, CELL - 12);
+          }
+        }
+      }
+
+      ctx.lineWidth = 2;
+      for (let x = 0; x < grid.width; x++) {
+        for (let y = 0; y < grid.height - 1; y++) {
+          const block = grid.hBlocks[x][y];
+          if (!block.solid) continue;
+          ctx.beginPath();
+          ctx.moveTo(x * CELL, (y + 1) * CELL);
+          ctx.lineTo((x + 1) * CELL, (y + 1) * CELL);
+          ctx.strokeStyle = block.pin ? '#f472b6' : '#94a3b8';
+          ctx.stroke();
+          if (block.pin) drawPinLabel(x * CELL + CELL / 2, (y + 1) * CELL - 6, block.pin);
+        }
+      }
+      for (let x = 0; x < grid.width - 1; x++) {
+        for (let y = 0; y < grid.height; y++) {
+          const block = grid.vBlocks[x][y];
+          if (!block.solid) continue;
+          ctx.beginPath();
+          ctx.moveTo((x + 1) * CELL, y * CELL);
+          ctx.lineTo((x + 1) * CELL, (y + 1) * CELL);
+          ctx.strokeStyle = block.pin ? '#f472b6' : '#94a3b8';
+          ctx.stroke();
+          if (block.pin) drawPinLabel((x + 1) * CELL - 6, y * CELL + CELL / 2, block.pin, true);
+        }
+      }
+    };
+
+    const drawPinLabel = (x, y, id, vertical) => {
+      ctx.save();
+      ctx.fillStyle = '#0ea5e9';
+      ctx.font = 'bold 12px Inter, system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.translate(x, y);
+      if (vertical) ctx.rotate(-Math.PI / 2);
+      ctx.fillText(id.split('-').pop().toUpperCase(), 0, 0);
+      ctx.restore();
+    };
+
+    const drawPinNodes = () => {
+      ctx.save();
+      ctx.fillStyle = '#f472b6';
+      for (const pin of state.pins) {
+        const cx = pin.orientation === 'h' ? pin.x * CELL + CELL / 2 : (pin.x + 1) * CELL;
+        const cy = pin.orientation === 'h' ? (pin.y + 1) * CELL : pin.y * CELL + CELL / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    };
+
+    const draw = () => {
+      drawGrid();
+      drawPinNodes();
+      if (state.won) statusText.textContent = 'Gewonnen!';
+      else if (state.lost) statusText.textContent = 'Verloren – versuche es erneut!';
+      else statusText.textContent = '';
+    };
+
+    // Simulation
+    const neighbors = (x, y) => [
+      { x, y: y - 1 },
+      { x: x + 1, y },
+      { x, y: y + 1 },
+      { x: x - 1, y }
+    ];
+
+    const transferMaterial = (from, to) => {
+      const source = getCell(state.grid, from.x, from.y);
+      const target = getCell(state.grid, to.x, to.y);
+      if (target.material !== MATERIALS.EMPTY) return false;
+      setCell(state.grid, to.x, to.y, source.material, { fireTicks: source.fireTicks });
+      setCell(state.grid, from.x, from.y, MATERIALS.EMPTY, { fireTicks: 0 });
+      return true;
+    };
+
+    const simulateFluids = () => {
+      const g = state.grid;
+      for (let y = g.height - 1; y >= 0; y--) {
+        for (let x = 0; x < g.width; x++) {
+          const cell = getCell(g, x, y);
+          if (![MATERIALS.WATER, MATERIALS.LAVA, MATERIALS.SAND, MATERIALS.GAS].includes(cell.material)) continue;
+          const dir = cell.material === MATERIALS.GAS ? -1 : 1;
+          const targets = [
+            { x, y: y + dir },
+            { x: x + 1, y: y + (dir > 0 ? 0 : -1) },
+            { x: x - 1, y: y + (dir > 0 ? 0 : -1) }
+          ];
+          for (const t of targets) {
+            if (!isBlocked(g, x, y, t.x, t.y) && getCell(g, t.x, t.y).material === MATERIALS.EMPTY) {
+              transferMaterial({ x, y }, t);
+              break;
+            }
+          }
+        }
+      }
+    };
+
+    const simulateFire = () => {
+      const g = state.grid;
+      for (let y = 0; y < g.height; y++) {
+        for (let x = 0; x < g.width; x++) {
+          const cell = getCell(g, x, y);
+          if (cell.material === MATERIALS.LAVA) {
+            for (const n of neighbors(x, y)) {
+              if (isBlocked(g, x, y, n.x, n.y)) continue;
+              const nb = getCell(g, n.x, n.y);
+              if (nb.material === MATERIALS.WATER) {
+                setCell(g, x, y, MATERIALS.STONE);
+                setCell(g, n.x, n.y, MATERIALS.STONE);
+              } else if (nb.material === MATERIALS.GAS) {
+                setCell(g, n.x, n.y, MATERIALS.FIRE, { fireTicks: 6 });
+              }
+            }
+          }
+          if (cell.material === MATERIALS.FIRE) {
+            const ticks = (cell.fireTicks || 0) - 1;
+            if (ticks <= 0) {
+              setCell(g, x, y, MATERIALS.EMPTY);
+            } else {
+              setCell(g, x, y, MATERIALS.FIRE, { fireTicks: ticks });
+              for (const n of neighbors(x, y)) {
+                if (!isBlocked(g, x, y, n.x, n.y) && getCell(g, n.x, n.y).material === MATERIALS.GAS) {
+                  setCell(g, n.x, n.y, MATERIALS.FIRE, { fireTicks: 6 });
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    const moveEnemies = () => {
+      const g = state.grid;
+      const next = [];
+      for (const enemy of state.enemies) {
+        const nx = enemy.x + enemy.dir;
+        if (!isBlocked(g, enemy.x, enemy.y, nx, enemy.y) && getCell(g, nx, enemy.y).material === MATERIALS.EMPTY) {
+          setCell(g, nx, enemy.y, MATERIALS.ENEMY, { dir: enemy.dir });
+          setCell(g, enemy.x, enemy.y, MATERIALS.EMPTY);
+          next.push({ x: nx, y: enemy.y, dir: enemy.dir });
+        } else {
+          next.push({ x: enemy.x, y: enemy.y, dir: -enemy.dir });
+        }
+      }
+      state.enemies = next;
+    };
+
+    const bfsPath = (start, goal) => {
+      const g = state.grid;
+      const queue = [start];
+      const visited = new Set([`${start.x},${start.y}`]);
+      const parent = {};
+      while (queue.length) {
+        const cur = queue.shift();
+        if (cur.x === goal.x && cur.y === goal.y) break;
+        for (const n of neighbors(cur.x, cur.y)) {
+          const key = `${n.x},${n.y}`;
+          if (visited.has(key) || isBlocked(g, cur.x, cur.y, n.x, n.y)) continue;
+          const cell = getCell(g, n.x, n.y);
+          if ([MATERIALS.EMPTY, MATERIALS.TREASURE, MATERIALS.STONE].includes(cell.material)) {
+            visited.add(key);
+            parent[key] = cur;
+            queue.push(n);
+          }
+        }
+      }
+      const key = `${goal.x},${goal.y}`;
+      if (!parent[key] && !(start.x === goal.x && start.y === goal.y)) return [];
+      const path = [];
+      let cur = goal;
+      while (!(cur.x === start.x && cur.y === start.y)) {
+        path.unshift(cur);
+        cur = parent[`${cur.x},${cur.y}`];
+      }
+      return path;
+    };
+
+    const moveHero = () => {
+      const path = bfsPath(state.hero, state.treasure);
+      if (!path.length) return;
+      const next = path[0];
+      const cell = getCell(state.grid, next.x, next.y);
+      if ([MATERIALS.LAVA, MATERIALS.FIRE, MATERIALS.ENEMY].includes(cell.material)) {
+        state.lost = true;
+        return;
+      }
+      setCell(state.grid, state.hero.x, state.hero.y, MATERIALS.EMPTY);
+      state.hero = { x: next.x, y: next.y };
+      setCell(state.grid, state.hero.x, state.hero.y, MATERIALS.HERO);
+    };
+
+    const checkGameEnd = () => {
+      const heroCell = getCell(state.grid, state.hero.x, state.hero.y);
+      if ([MATERIALS.LAVA, MATERIALS.FIRE, MATERIALS.ENEMY].includes(heroCell.material)) state.lost = true;
+      if (state.hero.x === state.treasure.x && state.hero.y === state.treasure.y) {
+        state.won = true;
+        state.coins += 10 + Math.floor(state.levelIndex / 10);
+        state.stars += 1;
+        saveProgress();
+      }
+      if (state.movesUsed > state.moveLimit) state.lost = true;
+    };
+
+    // Loop
+    const tick = () => {
+      if (!state.grid) return;
+      if (!state.won && !state.lost) {
+        simulateFluids();
+        simulateFire();
+        moveEnemies();
+        moveHero();
+        checkGameEnd();
+      }
+      draw();
+      requestAnimationFrame(tick);
+    };
+
+    // Interactions
+    const resetLevel = () => {
+      const level = generateLevel(state.levelIndex);
+      state.grid = level.grid;
+      state.pins = level.pins;
+      state.hero = level.hero;
+      state.treasure = level.treasure;
+      state.enemies = level.enemies;
+      state.moveLimit = level.moveLimit;
+      state.movesUsed = 0;
+      state.pulledPins = [];
+      state.won = false;
+      state.lost = false;
+      state.hintText = level.hintText;
+      updateLabels();
+      statusText.textContent = '';
+      draw();
+    };
+
+    const applyHint = () => {
+      if (state.coins < state.hintCost) {
+        statusText.textContent = 'Nicht genug Coins für einen Hint!';
+        return;
+      }
+      state.coins -= state.hintCost;
+      statusText.textContent = 'Empfohlene Zugreihenfolge hervorgehoben.';
+      hintBox.classList.add('flash');
+      setTimeout(() => hintBox.classList.remove('flash'), 1000);
+      saveProgress();
+      updateLabels();
+    };
+
+    canvas.addEventListener('click', e => {
+      if (!state.grid) return;
+      const rect = canvas.getBoundingClientRect();
+      const gx = Math.floor((e.clientX - rect.left) / CELL);
+      const gy = Math.floor((e.clientY - rect.top) / CELL);
+      for (const pin of state.pins) {
+        if (pin.pulled) continue;
+        if (pin.orientation === 'h') {
+          const near = Math.abs((pin.y + 1) * CELL - gy * CELL) < CELL / 2 && Math.abs((pin.x + 0.5) * CELL - gx * CELL) < CELL;
+          if (near) {
+            pullPin(pin.id);
+            return;
+          }
+        } else {
+          const near = Math.abs((pin.x + 1) * CELL - gx * CELL) < CELL / 2 && Math.abs((pin.y + 0.5) * CELL - gy * CELL) < CELL;
+          if (near) {
+            pullPin(pin.id);
+            return;
+          }
+        }
+      }
+    });
+
+    btnReset.addEventListener('click', resetLevel);
+    btnHint.addEventListener('click', applyHint);
+    btnNext.addEventListener('click', () => {
+      if (state.levelIndex < LEVEL_COUNT) {
+        state.levelIndex += 1;
+        resetLevel();
+        saveProgress();
+      }
+    });
+
+    // Boot
+    loadProgress();
+    resetLevel();
+    tick();
+  </script>
+</body>
+</html>
