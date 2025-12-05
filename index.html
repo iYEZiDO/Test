@@ -139,13 +139,17 @@
     };
 
     const addBoundaryWalls = grid => {
+      // Clamp to valid wall indices: hBlocks are indexed 0..height-2, vBlocks 0..width-2
+      const lastH = Math.max(0, grid.height - 2);
+      const lastV = Math.max(0, grid.width - 2);
+
       for (let x = 0; x < grid.width; x++) {
         addWall(grid, x, 0, 'h');
-        addWall(grid, x, grid.height - 1, 'h');
+        addWall(grid, x, lastH, 'h');
       }
       for (let y = 0; y < grid.height; y++) {
         addWall(grid, 0, y, 'v');
-        addWall(grid, grid.width - 1, y, 'v');
+        addWall(grid, lastV, y, 'v');
       }
     };
 
